@@ -7,7 +7,17 @@
 </head>
 <body>
   <h1>Admin Dashboard</h1>
-  
+
+  <div>
+    <label for="period">Select Period:</label>
+    <select id="period" onchange="initDashboard()">
+      <option value="daily">Daily</option>
+      <option value="weekly">Weekly</option>
+      <option value="monthly">Monthly</option>
+    </select>
+    <button onclick="exportToCSV()">Export CSV</button>
+  </div>
+
   <h2>Attendance Summary</h2>
   <canvas id="attendanceChart" width="600" height="300"></canvas>
 
