@@ -1,81 +1,105 @@
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwO7rRBaZT_PvPDNVd7HHyTvldn9n3abxFYikvJ_pHoILH27XDWO6hZb88HOH8Xw-Tr/exec";
+const scriptURL = "https://script.google.com/macros/s/AKfycbwO7rRBaZT_PvPDNVd7HHyTvldn9n3abxFYikvJ_pHoILH27XDWO6hZb88HOH8Xw-Tr/exec";
 
-let currentUser = null;
+let currentUser = {};
 
-// ===== Utility Functions =====
-
-// Get current UTC time for storing in Google Sheet
-function getUTCISOTime() {
-    return new Date().toISOString(); // YYYY-MM-DDTHH:MM:SS.sssZ
-}
-
-// Format ISO time to local readable string
-function formatLocalTime(isoString) {
-    const d = new Date(isoString);
-    return d.toLocaleString('en-US', { hour12: false }); // YYYY-MM-DD HH:MM:SS
-}
-
-// ===== Login =====
 async function login() {
-    const userID = document.getElementById("userID").value.trim();
-    if(!userID) { alert("Enter User ID"); return; }
+  const userId = document.getElementById("userId").value.trim();
+  if (!userId) {
+    alert("Enter UserID");
+    return;
+  }
 
-    const res = await fetch(WEB_APP_URL + "?sheet=Users");
-    const users = await res.json();
+  const res = await fetch(`${scriptURL}?action=checkUser&userId=${userId}`);
+  const data = await res.json();
 
-    const user = users.find(u => u[0] === userID);
-    if(user) {
-        currentUser = { id: user[0], name: user[1] };
-        document.getElementById("empName").innerText = currentUser.name;
-        document.getElementById("employeeArea").style.display = "block";
-        document.getElementById("loginArea").style.display = "none";
-    } else {
-        alert("Invalid User ID");
-    }
+  if (!data.exists) {
+    alert("User not found");
+    return;
+  }
+
+  currentUser = { userId: data.userId, userName: data.userName };
+  document.getElementById("loginContainer").classList.add("hidden");
+  document.getElementById("dashboard").classList.remove("hidden");
+  document.getElementById("displayName").innerText = data.userName;
+
+  loadAttendance();
+  loadTasks();
 }
 
-// ===== Attendance =====
-async function updateAttendance(type) {
-    const dateISO = getUTCISOTime();
-
-    // Fetch existing attendance
-    const res = await fetch(WEB_APP_URL + "?sheet=Attendance");
-    const data = await res.json();
-
-    const todayStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-    let existingRow = data.find(r => r[0] === currentUser.id && r[1].split("T")[0] === todayStr);
-
-    if(existingRow){
-        // TODO: Apps Script update function can replace this row
-        alert("Attendance already exists for today. Row update will fix duplicate.");
-    } else {
-        // Add new row
-        const payload = [currentUser.id, dateISO, type==='in'?dateISO:"", type==='out'?dateISO:"", currentUser.name];
-        await fetch(WEB_APP_URL + "?sheet=Attendance", {
-            method: "POST",
-            body: JSON.stringify(payload)
-        });
-        alert(`${type==='in' ? 'Check-In' : 'Check-Out'} recorded: ${formatLocalTime(dateISO)}`);
-    }
+function getUTCNow() {
+  return new Date().toISOString();
 }
 
-function checkIn(){ updateAttendance('in'); }
-function checkOut(){ updateAttendance('out'); }
+function formatLocalTime(isoString) {
+  if (!isoString) return "";
+  const d = new Date(isoString);
+  return d.toLocaleString();
+}
 
-// ===== Task Update =====
-async function updateTask() {
-    const taskTitle = document.getElementById("taskTitle").value.trim();
-    const taskStatus = document.getElementById("taskStatus").value;
-    const dateISO = getUTCISOTime();
+async function checkIn() {
+  const payload = {
+    action: "checkIn",
+    userId: currentUser.userId,
+    userName: currentUser.userName,
+    time: getUTCNow()
+  };
+  await postData(payload);
+  loadAttendance();
+}
 
-    if(!taskTitle) { alert("Enter Task Title"); return; }
+async function checkOut() {
+  const payload = {
+    action: "checkOut",
+    userId: currentUser.userId,
+    userName: currentUser.userName,
+    time: getUTCNow()
+  };
+  await postData(payload);
+  loadAttendance();
+}
 
-    const payload = ["task_" + Date.now(), currentUser.id, taskTitle, taskStatus, dateISO, currentUser.name];
-    await fetch(WEB_APP_URL + "?sheet=Tasks", {
-        method: "POST",
-        body: JSON.stringify(payload)
-    });
+async function addTask() {
+  const taskTitle = document.getElementById("taskTitle").value.trim();
+  const status = document.getElementById("taskStatus").value;
 
-    alert("Task updated: " + taskTitle + " at " + formatLocalTime(dateISO));
-    document.getElementById("taskTitle").value = "";
+  if (!taskTitle) {
+    alert("Enter task title");
+    return;
+  }
+
+  const payload = {
+    action: "addTask",
+    userId: currentUser.userId,
+    userName: currentUser.userName,
+    taskTitle,
+    status,
+    time: getUTCNow()
+  };
+  await postData(payload);
+  loadTasks();
+}
+
+async function loadAttendance() {
+  const res = await fetch(`${scriptURL}?action=getAttendance&userId=${currentUser.userId}`);
+  const data = await res.json();
+  const log = document.getElementById("attendanceLog");
+  log.innerHTML = data.map(row =>
+    `<p>${row.Date}: In ${formatLocalTime(row.CheckIn)} Out ${formatLocalTime(row.CheckOut)}</p>`
+  ).join("");
+}
+
+async function loadTasks() {
+  const res = await fetch(`${scriptURL}?action=getTasks&userId=${currentUser.userId}`);
+  const data = await res.json();
+  const list = document.getElementById("taskList");
+  list.innerHTML = data.map(row =>
+    `<p>${row.TaskTitle} - ${row.Status} (Updated: ${formatLocalTime(row.LastUpdated)})</p>`
+  ).join("");
+}
+
+async function postData(payload) {
+  await fetch(scriptURL, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
 }
